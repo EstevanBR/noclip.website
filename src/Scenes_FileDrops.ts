@@ -2,20 +2,8 @@
 import { SceneDesc, SceneGfx } from "./viewer.js";
 import ArrayBufferSlice from "./ArrayBufferSlice.js";
 import { GfxDevice } from "./gfx/platform/GfxPlatform.js";
-import { readString, flatten } from "./util.js";
+import { flatten } from "./util.js";
 
-import * as Yaz0 from './Common/Compression/Yaz0.js';
-import * as CX from './Common/Compression/CX.js';
-
-import * as Grezzo3DS from './OcarinaOfTime3D/scenes.js';
-import * as NNS_G3D from './nns_g3d/scenes.js';
-import * as J3D from './j3d/scenes.js';
-import * as CTR_H3D from './Common/CTR_H3D/H3D.js';
-import * as RRES from './rres/scenes.js';
-import * as PaperMarioTTYD from './PaperMarioTTYD/Scenes_PaperMarioTTYD.js';
-import * as JPAExplorer from './InteractiveExamples/JPAExplorer.js';
-import * as SourceFileDrops from './SourceEngine/Scenes_FileDrops.js';
-import * as SuperMonkeyBall from './SuperMonkeyBall/Scenes_SuperMonkeyBall.js';
 import { SceneContext } from "./SceneBase.js";
 import { DataFetcher, NamedArrayBufferSlice } from "./DataFetcher.js";
 
@@ -42,77 +30,7 @@ function loadFileAsPromise(file: File, dataFetcher: DataFetcher): Promise<NamedA
     });
 }
 
-export function decompressArbitraryFile(buffer: ArrayBufferSlice): ArrayBufferSlice {
-    const magic = readString(buffer, 0x00, 0x04);
-    if (magic === 'Yaz0')
-        return Yaz0.decompress(buffer);
-    else if (magic.charCodeAt(0) === 0x10 || magic.charCodeAt(0) === 0x11)
-        return CX.decompress(buffer);
-    else
-        return buffer;
-}
-
-async function loadArbitraryFile(context: SceneContext, buffer: ArrayBufferSlice): Promise<SceneGfx> {
-    const device = context.device;
-
-    buffer = await decompressArbitraryFile(buffer);
-    const magic = readString(buffer, 0x00, 0x04);
-
-    if (magic === 'RARC' || magic === 'CRAR' || magic === 'J3D2')
-        return J3D.createSceneFromBuffer(context, buffer);
-
-    if (magic === '\x55\xAA\x38\x2D') // U8
-        return RRES.createSceneFromU8Buffer(context, buffer);
-
-    if (magic === 'bres')
-        return RRES.createBasicRRESRendererFromBRRES(device, [buffer]);
-
-    throw "whoops";
-}
-
 export async function createSceneFromFiles(context: SceneContext, buffers: NamedArrayBufferSlice[]): Promise<SceneGfx> {
-    const device = context.device;
-
-    buffers.sort((a, b) => a.name.localeCompare(b.name));
-
-    const buffer = buffers[0];
-
-    if (buffer.name.endsWith('.zar') || buffer.name.endsWith('.gar') || buffer.name.endsWith('.gar.lzs'))
-        return Grezzo3DS.createSceneFromZARBuffer(device, buffer);
-
-    if (buffer.name.endsWith('.arc') || buffer.name.endsWith('.carc') || buffer.name.endsWith('.szs'))
-        return loadArbitraryFile(context, buffer);
-
-    if (buffer.name.endsWith('.jpc'))
-        return JPAExplorer.createRendererFromBuffers(context, [buffer]);
-
-    if (buffers.every((b) => b.name.endsWith('.jpa')))
-        return JPAExplorer.createRendererFromBuffers(context, buffers);
-
-    if (buffers.some((b) => b.name.endsWith('.brres')))
-        return RRES.createBasicRRESRendererFromBRRES(device, buffers);
-
-    if (buffer.name.endsWith('.rarc') || buffer.name.endsWith('.bmd') || buffer.name.endsWith('.bdl'))
-        return J3D.createSceneFromBuffer(context, buffer);
-
-    if (buffer.name.endsWith('.nsbmd'))
-        return NNS_G3D.createBasicNSBMDRendererFromNSBMD(device, buffers);
-
-    if (buffers.length === 2 && buffers[0].name === 'd' && buffers[1].name === 't')
-        return PaperMarioTTYD.createWorldRendererFromBuffers(device, buffers[0], buffers[1]);
-
-    if (buffer.name.endsWith('.bch'))
-        CTR_H3D.parse(buffer);
-
-    // Source renderer also use .gma extension, so try SMB first to see if it parses or not
-    const superMonkeyBallRenderer = SuperMonkeyBall.createSceneFromNamedBuffers(context, buffers);
-    if (superMonkeyBallRenderer !== null) {
-        return superMonkeyBallRenderer;
-    }
-
-    if (buffer.name.endsWith('.bsp') || buffer.name.endsWith('.gma'))
-        return SourceFileDrops.createFileDropsScene(context, buffer); 
-
     throw "whoops";
 }
 
