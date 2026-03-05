@@ -1,7 +1,7 @@
 
 import * as Viewer from '../viewer.js';
-import { GfxDevice, GfxBindingLayoutDescriptor, GfxMegaStateDescriptor, GfxCullMode, GfxFrontFaceMode, GfxBlendMode, GfxBlendFactor, GfxSampler, GfxWrapMode, GfxTexFilterMode, GfxMipFilterMode, GfxRenderProgramDescriptor } from "../gfx/platform/GfxPlatform.js";
-import { makeBackbufferDescSimple, standardFullClearRenderPassDescriptor } from "../gfx/helpers/RenderGraphHelpers.js";
+import { GfxDevice, GfxBindingLayoutDescriptor, GfxMegaStateDescriptor, GfxCullMode, GfxFrontFaceMode, GfxBlendMode, GfxBlendFactor, GfxSampler, GfxWrapMode, GfxTexFilterMode, GfxMipFilterMode, GfxRenderProgramDescriptor, GfxTexture, GfxFormat, makeTextureDescriptor2D } from "../gfx/platform/GfxPlatform.js";
+import { makeBackbufferDescSimple, standardFullClearRenderPassDescriptor, opaqueBlackFullClearRenderPassDescriptor } from "../gfx/helpers/RenderGraphHelpers.js";
 import { GfxRenderHelper } from "../gfx/render/GfxRenderHelper.js";
 import { GfxRenderInstList, GfxRenderInstManager, GfxRendererLayer, makeSortKey, makeSortKeyOpaque } from "../gfx/render/GfxRenderInstManager.js";
 import { fillMatrix4x4, fillMatrix4x3, fillVec4, fillVec4v } from "../gfx/helpers/UniformBufferHelpers.js";
@@ -316,6 +316,110 @@ export class FezObjectRenderer {
 
         renderInst.setDrawCount(this.geometryData.indexCount);
         renderInstManager.submitRenderInst(renderInst);
+    }
+}
+
+export class FezArtObjectRenderer implements Viewer.SceneGfx {
+    private program: GfxRenderProgramDescriptor;
+    private renderHelper: GfxRenderHelper;
+    private renderInstListMain = new GfxRenderInstList();
+    private levelRenderData = new FezLevelRenderData();
+    private artObjectRenderer: FezObjectRenderer;
+    private dummyShadowTexture: GfxTexture;
+    private lightDirection = vec4.fromValues(1, 1, 1, 0);
+
+    constructor(device: GfxDevice, private artObjectData: ArtObjectData) {
+        this.renderHelper = new GfxRenderHelper(device);
+        this.program = preprocessProgramObj_GLSL(device, new FezProgram());
+
+        this.dummyShadowTexture = device.createTexture(makeTextureDescriptor2D(GfxFormat.U8_RGBA_NORM, 1, 1, 1));
+        device.uploadTextureData(this.dummyShadowTexture, 0, [new Uint8Array([0, 0, 0, 0])]);
+
+        const sampler = this.renderHelper.renderCache.createSampler({
+            wrapS: GfxWrapMode.Clamp,
+            wrapT: GfxWrapMode.Clamp,
+            minFilter: GfxTexFilterMode.Point,
+            magFilter: GfxTexFilterMode.Point,
+            mipFilter: GfxMipFilterMode.Nearest,
+            minLOD: 0, maxLOD: 0,
+        });
+
+        this.levelRenderData.shadowTextureMapping.gfxTexture = this.dummyShadowTexture;
+        this.levelRenderData.shadowTextureMapping.gfxSampler = sampler;
+        this.levelRenderData.baseDiffuse = 1.0;
+        this.levelRenderData.baseAmbient = 0.3;
+
+        this.artObjectRenderer = new FezObjectRenderer(artObjectData, artObjectData.geometry);
+        mat4.fromScaling(this.artObjectRenderer.modelMatrix, [50, 50, 50]);
+    }
+
+    public adjustCameraController(c: CameraController) {
+        c.setSceneMoveSpeedMult(16/60);
+    }
+
+    public getDefaultWorldMatrix(dst: mat4): void {
+        const bbox = this.artObjectData.geometry.bbox;
+        const cx = (bbox.min[0] + bbox.max[0]) * 0.5 * 50;
+        const cy = (bbox.min[1] + bbox.max[1]) * 0.5 * 50;
+        const sizeX = (bbox.max[0] - bbox.min[0]) * 50;
+        const sizeY = (bbox.max[1] - bbox.min[1]) * 50;
+        const sizeZ = (bbox.max[2] - bbox.min[2]) * 50;
+        const dist = Math.max(sizeX, sizeY, sizeZ, 50) * 2.5;
+        mat4.identity(dst);
+        dst[12] = cx;
+        dst[13] = cy;
+        dst[14] = dist;
+    }
+
+    public prepareToRender(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput, renderInstManager: GfxRenderInstManager) {
+        const template = this.renderHelper.pushTemplateRenderInst();
+        template.setBindingLayouts(bindingLayouts);
+        const gfxProgram = renderInstManager.gfxRenderCache.createProgramSimple(this.program);
+        template.setGfxProgram(gfxProgram);
+
+        let offs = template.allocateUniformBuffer(FezProgram.ub_SceneParams, 16);
+        const d = template.mapUniformBufferF32(FezProgram.ub_SceneParams);
+        offs += fillMatrix4x4(d, offs, viewerInput.camera.projectionMatrix);
+
+        this.renderHelper.renderInstManager.setCurrentList(this.renderInstListMain);
+
+        vec4.transformMat4(this.levelRenderData.lightDirection, this.lightDirection, viewerInput.camera.viewMatrix);
+        vec4.set(this.levelRenderData.shadowTexScaleBias, 1, 1, 0, 0);
+
+        template.sortKey = makeSortKeyOpaque(GfxRendererLayer.OPAQUE, gfxProgram.ResourceUniqueId);
+        this.artObjectRenderer.prepareToRender(this.levelRenderData, renderInstManager, viewerInput);
+
+        renderInstManager.popTemplate();
+        this.renderHelper.prepareToRender();
+    }
+
+    public render(device: GfxDevice, viewerInput: Viewer.ViewerRenderInput) {
+        const renderInstManager = this.renderHelper.renderInstManager;
+        const builder = this.renderHelper.renderGraph.newGraphBuilder();
+
+        const mainColorDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.Color0, viewerInput, opaqueBlackFullClearRenderPassDescriptor);
+        const mainDepthDesc = makeBackbufferDescSimple(GfxrAttachmentSlot.DepthStencil, viewerInput, opaqueBlackFullClearRenderPassDescriptor);
+
+        const mainColorTargetID = builder.createRenderTargetID(mainColorDesc, 'Main Color');
+        const mainDepthTargetID = builder.createRenderTargetID(mainDepthDesc, 'Main Depth');
+        builder.pushPass((pass) => {
+            pass.setDebugName('Main');
+            pass.attachRenderTargetID(GfxrAttachmentSlot.Color0, mainColorTargetID);
+            pass.attachRenderTargetID(GfxrAttachmentSlot.DepthStencil, mainDepthTargetID);
+            pass.exec((passRenderer) => {
+                this.renderInstListMain.drawOnPassRenderer(this.renderHelper.renderCache, passRenderer);
+            });
+        });
+        this.renderHelper.antialiasingSupport.pushPasses(builder, viewerInput, mainColorTargetID);
+        builder.resolveRenderTargetToExternalTexture(mainColorTargetID, viewerInput.onscreenTexture);
+
+        this.prepareToRender(device, viewerInput, renderInstManager);
+        builder.execute();
+    }
+
+    public destroy(device: GfxDevice): void {
+        device.destroyTexture(this.dummyShadowTexture);
+        this.renderHelper.destroy();
     }
 }
 
