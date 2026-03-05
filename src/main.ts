@@ -907,7 +907,22 @@ class Main {
             const camera = this.viewer.camera;
 
             const key = this.saveManager.getSaveStateSlotKey(sceneDescId, 1);
-            const didLoadCameraState = this._loadSceneSaveState(this.saveManager.loadState(key));
+            let didLoadCameraState = this._loadSceneSaveState(this.saveManager.loadState(key));
+
+            // If no saved state found, also try any old (pre-rename) IDs from sceneIdMap for backward compat
+            if (!didLoadCameraState) {
+                const sceneGroup = this.sceneDatabase.getSceneDescGroup(this.currentSceneDesc!);
+                if (sceneGroup.sceneIdMap !== undefined) {
+                    const shortId = sceneDescId.slice(sceneGroup.id.length + 1);
+                    for (const [altId, canonicalId] of sceneGroup.sceneIdMap) {
+                        if (canonicalId === shortId) {
+                            const altKey = this.saveManager.getSaveStateSlotKey(`${sceneGroup.id}/${altId}`, 1);
+                            didLoadCameraState = this._loadSceneSaveState(this.saveManager.loadState(altKey));
+                            if (didLoadCameraState) break;
+                        }
+                    }
+                }
+            }
 
             if (!didLoadCameraState) {
                 if (scene.getDefaultWorldMatrix !== undefined)
