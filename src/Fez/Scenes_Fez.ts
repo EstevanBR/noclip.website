@@ -3,7 +3,7 @@ import * as Viewer from '../viewer.js';
 import { DataFetcher } from '../DataFetcher.js';
 import { GfxDevice, GfxTexture } from '../gfx/platform/GfxPlatform.js';
 import { SceneContext } from '../SceneBase.js';
-import { FezRenderer, FezArtObjectRenderer } from './FezRenderer.js';
+import { FezLevelRenderer, FezArtObjectRenderer } from './FezRenderer.js';
 import { TrilesetData } from './TrileData.js';
 import { ArtObjectData } from './ArtObjectData.js';
 import { BackgroundPlaneData } from './BackgroundPlaneData.js';
@@ -145,7 +145,7 @@ class FezSceneDesc implements Viewer.SceneDesc {
 
         await cache.waitForLoad();
 
-        return new FezRenderer(device, cache, level);
+        return new FezLevelRenderer(device, cache, level);
     }
 }
 
@@ -575,9 +575,6 @@ const sceneDescs: (string | Viewer.SceneDesc)[] = [
     new FezArtObjectSceneDesc('mech_support_aao', 'mech_support_aao'),
     new FezArtObjectSceneDesc('megalithao', 'megalithao'),
     new FezArtObjectSceneDesc('memory_core_signageao', 'memory_core_signageao'),
-    new FezArtObjectSceneDesc('menu_cube_cmy', 'menu_cube_cmy'),
-    new FezArtObjectSceneDesc('menu_cube_gb', 'menu_cube_gb'),
-    new FezArtObjectSceneDesc('menu_cube_virtual', 'menu_cube_virtual'),
     new FezArtObjectSceneDesc('menu_cubeao', 'menu_cubeao'),
     new FezArtObjectSceneDesc('mine_big_crateao', 'mine_big_crateao'),
     new FezArtObjectSceneDesc('mine_city_big_doorao', 'mine_city_big_doorao'),

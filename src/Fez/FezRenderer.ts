@@ -115,7 +115,7 @@ class FezLevelRenderData {
     public baseAmbient: number = 0.0;
 }
 
-export class FezRenderer implements Viewer.SceneGfx {
+export class FezLevelRenderer implements Viewer.SceneGfx {
     private program: GfxRenderProgramDescriptor;
     private renderHelper: GfxRenderHelper;
     private renderInstListMain = new GfxRenderInstList();
